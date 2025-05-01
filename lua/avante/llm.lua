@@ -59,15 +59,14 @@ function M.summarize_chat_thread_title(content, cb)
   })
 end
 
----@param bufnr integer
----@param history avante.ChatHistory
+---@param prev_memory string | nil
 ---@param history_messages avante.HistoryMessage[]
 ---@param cb fun(memory: avante.ChatMemory | nil): nil
-function M.summarize_memory(bufnr, history, history_messages, cb)
+function M.summarize_memory(prev_memory, history_messages, cb)
   local system_prompt =
     [[You are an expert coding assistant. Your goal is to generate a concise, structured summary of the conversation below that captures all essential information needed to continue development after context replacement. Include tasks performed, code areas modified or reviewed, key decisions or assumptions, test results or errors, and outstanding tasks or next steps.]]
   if #history_messages == 0 then
-    cb(history.memory)
+    cb(nil)
     return
   end
   local latest_timestamp = history_messages[#history_messages].timestamp
@@ -88,7 +87,7 @@ function M.summarize_memory(bufnr, history, history_messages, cb)
   local user_prompt = "Here is the conversation so far:\n"
     .. conversation_text
     .. "\n\nPlease summarize this conversation, covering:\n1. Tasks performed and outcomes\n2. Code files, modules, or functions modified or examined\n3. Important decisions or assumptions made\n4. Errors encountered and test or build results\n5. Remaining tasks, open questions, or next steps\nProvide the summary in a clear, concise format."
-  if history.memory then user_prompt = user_prompt .. "\n\nThe previous summary is:\n\n" .. history.memory.content end
+  if prev_memory then user_prompt = user_prompt .. "\n\nThe previous summary is:\n\n" .. prev_memory end
   local messages = {
     {
       role = "user",
@@ -121,11 +120,9 @@ function M.summarize_memory(bufnr, history, history_messages, cb)
             last_summarized_timestamp = latest_timestamp,
             last_message_uuid = latest_message_uuid,
           }
-          history.memory = memory
-          Path.history.save(bufnr, history)
           cb(memory)
         else
-          cb(history.memory)
+          cb(nil)
         end
       end,
     },
@@ -293,28 +290,34 @@ function M.generate_prompts(opts)
 
   local final_history_messages = {}
   if opts.history_messages then
-    if Config.history.max_tokens > 0 then remaining_tokens = math.min(Config.history.max_tokens, remaining_tokens) end
-    -- Traverse the history in reverse, keeping only the latest history until the remaining tokens are exhausted and the first message role is "user"
-    local history_messages = {}
-    for i = #opts.history_messages, 1, -1 do
-      local message = opts.history_messages[i]
-      local tokens = Utils.tokens.calculate_tokens(message.message.content)
-      remaining_tokens = remaining_tokens - tokens
-      if remaining_tokens > 0 then
-        table.insert(history_messages, 1, message)
-      else
-        break
+    if opts.disable_compact_history_messages then
+      final_history_messages = vim.list_extend(final_history_messages, opts.history_messages)
+    else
+      if Config.history.max_tokens > 0 then
+        remaining_tokens = math.min(Config.history.max_tokens, remaining_tokens)
       end
+      -- Traverse the history in reverse, keeping only the latest history until the remaining tokens are exhausted and the first message role is "user"
+      local history_messages = {}
+      for i = #opts.history_messages, 1, -1 do
+        local message = opts.history_messages[i]
+        local tokens = Utils.tokens.calculate_tokens(message.message.content)
+        remaining_tokens = remaining_tokens - tokens
+        if remaining_tokens > 0 then
+          table.insert(history_messages, 1, message)
+        else
+          break
+        end
+      end
+
+      if #history_messages == 0 then
+        history_messages = vim.list_slice(opts.history_messages, #opts.history_messages - 1, #opts.history_messages)
+      end
+
+      dropped_history_messages = vim.list_slice(opts.history_messages, 1, #opts.history_messages - #history_messages)
+
+      -- prepend the history messages to the messages table
+      vim.iter(history_messages):each(function(msg) table.insert(final_history_messages, msg) end)
     end
-
-    if #history_messages == 0 then
-      history_messages = vim.list_slice(opts.history_messages, #opts.history_messages - 1, #opts.history_messages)
-    end
-
-    dropped_history_messages = vim.list_slice(opts.history_messages, 1, #opts.history_messages - #history_messages)
-
-    -- prepend the history messages to the messages table
-    vim.iter(history_messages):each(function(msg) table.insert(final_history_messages, msg) end)
   end
 
   -- Utils.debug("opts.history_messages", opts.history_messages)
@@ -622,6 +625,16 @@ function M._stream(opts)
   local provider = opts.provider or Providers[Config.provider]
   opts.session_ctx = opts.session_ctx or {}
 
+  if not opts.session_ctx.on_messages_add then opts.session_ctx.on_messages_add = opts.on_messages_add end
+  if not opts.session_ctx.on_state_change then opts.session_ctx.on_state_change = opts.on_state_change end
+  if not opts.session_ctx.on_start then opts.session_ctx.on_start = opts.on_start end
+  if not opts.session_ctx.on_chunk then opts.session_ctx.on_chunk = opts.on_chunk end
+  if not opts.session_ctx.on_stop then opts.session_ctx.on_stop = opts.on_stop end
+  if not opts.session_ctx.on_tool_log then opts.session_ctx.on_tool_log = opts.on_tool_log end
+  if not opts.session_ctx.get_history_messages then
+    opts.session_ctx.get_history_messages = opts.get_history_messages
+  end
+
   ---@cast provider AvanteProviderFunctor
 
   local prompt_opts = M.generate_prompts(opts)
@@ -898,7 +911,7 @@ function M.stream(opts)
     local original_on_chunk = opts.on_chunk
     opts.on_chunk = vim.schedule_wrap(function(chunk)
       if is_completed then return end
-      return original_on_chunk(chunk)
+      if original_on_chunk then return original_on_chunk(chunk) end
     end)
   end
   if opts.on_stop ~= nil then

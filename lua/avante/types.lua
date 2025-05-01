@@ -349,6 +349,7 @@ vim.g.avante_login = vim.g.avante_login
 ---@field update_snippets? string[]
 ---@field prompt_opts? AvantePromptOptions
 ---@field session_ctx? table
+---@field disable_compact_history_messages? boolean
 ---
 ---@class AvanteLLMToolHistory
 ---@field tool_result? AvanteLLMToolResult
@@ -361,7 +362,7 @@ vim.g.avante_login = vim.g.avante_login
 ---
 ---@class AvanteLLMStreamOptions: AvanteGeneratePromptsOptions
 ---@field on_start AvanteLLMStartCallback
----@field on_chunk AvanteLLMChunkCallback
+---@field on_chunk? AvanteLLMChunkCallback
 ---@field on_stop AvanteLLMStopCallback
 ---@field on_memory_summarize? AvanteLLMMemorySummarizeCallback
 ---@field on_tool_log? fun(tool_id: string, tool_name: string, log: string, state: AvanteLLMToolUseState): nil
