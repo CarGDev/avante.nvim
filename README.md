@@ -1,3 +1,18 @@
+<div align="center" markdown="1">
+   <sup>Special thanks to:</sup>
+   <br>
+   <br>
+   <a href="https://www.warp.dev/avantenvim">
+      <img alt="Warp sponsorship" width="400" src="https://github.com/user-attachments/assets/0fb088f2-f684-4d17-86d2-07a489229083">
+   </a>
+
+### [Warp, the intelligent terminal for developers](https://www.warp.dev/avantenvim)
+
+[Available for MacOS, Linux, & Windows](https://www.warp.dev/avantenvim)<br>
+
+</div>
+<hr>
+
 <div align="center">
   <img alt="logo" width="120" src="https://github.com/user-attachments/assets/2e2f2a58-2b28-4d11-afd1-87b65612b2de" />
   <h1>avante.nvim</h1>
@@ -561,12 +576,27 @@ Given its early stage, `avante.nvim` currently supports the following basic func
 >
 > For Amazon Bedrock:
 >
+> You can specify the `BEDROCK_KEYS` environment variable to set credentials. When this variable is not specified, bedrock will use the default AWS credentials chain (see below).
+>
 > ```sh
 > export BEDROCK_KEYS=aws_access_key_id,aws_secret_access_key,aws_region[,aws_session_token]
->
 > ```
 >
 > Note: The aws_session_token is optional and only needed when using temporary AWS credentials
+>
+> Alternatively Bedrock tries to resolve AWS credentials using the [Default Credentials Provider Chain](https://docs.aws.amazon.com/cli/v1/userguide/cli-chap-authentication.html).
+> This means you can have credentials e.g. configured via the AWS CLI, stored in your ~/.aws/profile, use AWS SSO etc.
+> In this case `aws_region` and optionally `aws_profile` should be specified via the bedrock config, e.g.:
+>
+> ```lua
+> bedrock = {
+>   model = "us.anthropic.claude-3-5-sonnet-20241022-v2:0",
+>   aws_profile = "bedrock",
+>   aws_region = "us-east-1",
+>},
+> ```
+>
+> Note: Bedrock requires the [AWS CLI](https://aws.amazon.com/cli/) to be installed on your system.
 
 1. Open a code file in Neovim.
 2. Use the `:AvanteAsk` command to query the AI about the code.
@@ -939,6 +969,43 @@ If you have the following structure:
 > [!important]
 >
 > `*.avanterules` is a jinja template file, in which will be rendered using [minijinja](https://github.com/mitsuhiko/minijinja). See [templates](https://github.com/yetone/avante.nvim/blob/main/lua/avante/templates) for example on how to extend current templates.
+
+## Integration
+
+Avante.nvim can be extended to work with other plugins by using its extension modules. Below is an example of integrating Avante with [`nvim-tree`](https://github.com/nvim-tree/nvim-tree.lua), allowing you to select or deselect files directly from the NvimTree UI:
+
+```lua
+{
+    "yetone/avante.nvim",
+    event = "VeryLazy",
+    keys = {
+        {
+            "<leader>a+",
+            function()
+                local tree_ext = require("avante.extensions.nvim_tree")
+                tree_ext.add_file()
+            end,
+            desc = "Select file in NvimTree",
+            ft = "NvimTree",
+        },
+        {
+            "<leader>a-",
+            function()
+                local tree_ext = require("avante.extensions.nvim_tree")
+                tree_ext.remove_file()
+            end,
+            desc = "Deselect file in NvimTree",
+            ft = "NvimTree",
+        },
+    },
+    opts = {
+        --- other configurations
+        selector = {
+            exclude_auto_select = { "NvimTree" },
+        },
+    },
+}
+```
 
 ## TODOs
 
